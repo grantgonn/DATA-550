@@ -1,0 +1,69 @@
+import mlflow
+import json
+import pandas as pd
+
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor, VotingRegressor
+from xgboost import XGBRegressor
+
+# Load the data
+df = pd.read_csv('train.csv')
+
+X = df.drop('charges', axis=1)
+y = df['charges']
+
+# define kfold
+skf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+# loading rf params
+with open('RF_params.json', 'r') as f:
+    RF_params = json.load(f)
+    
+RF_model = RandomForestRegressor(**RF_params)
+
+# loading et params
+with open('ET_params.json', 'r') as f:
+    ET_params = json.load(f)
+    
+ET_model = ExtraTreesRegressor(**ET_params)
+
+# loading gb params
+with open('GB_params.json', 'r') as f:
+    GB_params = json.load(f)
+    
+GB_model = GradientBoostingRegressor(**GB_params)
+
+# loading xgb params
+with open('XGB_params.json', 'r') as f:
+    XGB_params = json.load(f)
+    
+XGB_model = XGBRegressor(**XGB_params)
+
+# defing the base models for voting regressor
+base_models = [('RF', RF_model), ('ET', ET_model), ('GB', GB_model), ('XGB', XGB_model)]
+
+# define the voting regressor
+vote_md = VotingRegressor(estimators=base_models, weights=[.2, .2, .2, .4], n_jobs=-1, verbose=False)
+
+# compute the cross val score
+scores = -1* cross_val_score(vote_md, X, y, cv=skf, scoring='neg_root_mean_squared_error', n_jobs=-1).mean()
+
+# setting the experiment
+mlflow.set_experiment('Inclass8')
+
+with mlflow.start_run(run_name='Voting Regressor') as run:
+    #define the model
+    model = vote_md
+    
+    #fit the model
+    model.fit(X, y)
+    mlflow.sklearn.log_model(model, 'model', input_example=X.head())
+    
+    # log score
+    mlflow.log_metric('rmse', scores)
+    
+    # log tags
+    mlflow.set_tags(tags={'Project': 'In class 8 Voting Regressor',
+                         'Model_family': 'Voting Regressor',
+                         'feature_version': 1})
+    mlflow.end_run()
